@@ -1,24 +1,50 @@
-![logo_ironhack_blue 7](https://user-images.githubusercontent.com/23629340/40541063-a07a0a8a-601a-11e8-91b5-2f13e4e6b441.png)
+# RAG Chatbot with MultiQuery Retriever
 
-# Lab | Question Answering with LangChain, OpenAI, and MultiQuery Retriever
+A retrieval-augmented generation chatbot that answers questions over internal company documents using LangChain's MultiQuery Retriever, Elasticsearch as the vector store, and Groq as the LLM.
 
-## Getting Started
+→ [lab_chatbot_with_multi_query_retriever.ipynb](lab_chatbot_with_multi_query_retriever.ipynb)
 
-Follow the instructions provided in the notebook.
+## What it demonstrates
 
-Read the instructions for each cell and provide your answers. Make sure to test your answers in each cell and save. Jupyter Notebook should automatically save your work progress. But it's a good idea to periodically save your work manually just in case.
+Standard RAG fails when a user's phrasing doesn't closely match how relevant documents are worded. MultiQuery Retriever solves this by generating multiple rephrased versions of each question before searching — broadening recall without changing the underlying vector store or embedding model. This lab makes that tradeoff concrete: you can observe the generated query variants in the logs and see how retrieval coverage changes.
 
-## Deliverables
+## Key decisions worth noting
 
-- Downloaded notebook with your responses to each of the exercises.
+**Embedding model matters more than the retriever.** The original scaffold used `all-MiniLM-L6-v2`, which returned NASA space agency content when queried about the "NASA sales region" acronym. Switching to `BAAI/bge-large-en-v1.5` (1024-dim, stronger semantic disambiguation) resolved it. The retriever pattern only helps if the embeddings understand the domain.
 
+**Remote inference everywhere — no local GPU required.** Embeddings run via HuggingFace Inference API, the LLM runs on Groq (free tier, fast), and vectors are stored in Elasticsearch Serverless. The entire pipeline runs on any machine with API keys.
 
-## Submission
+**MultiQuery doubles token usage.** Each question triggers one Groq call to generate query variants, then a final call to answer — budget accordingly on free tiers.
 
-- Upon completion, add your deliverables to git. 
-- Then commit git and push your branch to the remote.
-- Make a pull request and paste the PR link in the submission field in the Student Portal.
+**Changing embedding models requires re-indexing.** Switching from MiniLM to BGE produces vectors of different dimensions; storing them in the same Elasticsearch index causes errors. The notebook uses a separate `INDEX_NAME` variable so re-indexing creates a new index cleanly.
 
-<br>
+**Self-healing retriever is redundant here.** The retry logic (rewrite the query and search again on empty results) adds latency but the multi-query loop already covers empty-result cases through query variation. Left in as an illustration, not a recommendation.
 
-**Good luck!**
+## Stack
+
+| Component | Choice |
+|---|---|
+| LLM | Groq `llama-3.3-70b-versatile` |
+| Embeddings | `BAAI/bge-large-en-v1.5` via HuggingFace Hub |
+| Vector store | Elasticsearch Serverless |
+| Retriever | LangChain `MultiQueryRetriever` |
+| Framework | LangChain / LCEL |
+
+## How to run
+
+1. Copy `.env.example` to `.env` and fill in your keys:
+   ```
+   GROQ_API_KEY=
+   HF_TOKEN=
+   ELASTIC_API_KEY=
+   ELASTIC_CLOUD_ID=
+   ```
+
+2. Install dependencies:
+   ```bash
+   pip install "langchain>=1.0" "langchain-core>=0.3" "langchain-community>=0.4" \
+     "langchain-classic>=0.3" langchain-groq langchain-huggingface \
+     langchain-elasticsearch jq lark elasticsearch python-dotenv
+   ```
+
+3. Open and run `lab_chatbot_with_multi_query_retriever.ipynb` top to bottom. The first run indexes the documents into Elasticsearch; subsequent runs can skip the indexing cells.
